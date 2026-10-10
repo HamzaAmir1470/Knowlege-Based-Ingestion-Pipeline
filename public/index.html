@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knowledge Ingestion Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- Tailwind Play CDN: zero build step, ideal for a lesson. For production, compile Tailwind with its CLI. -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Schibsted Grotesk"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            serif: ['"Source Serif 4"', 'Georgia', 'serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            ink: '#15203B',
+            paper: '#F4F6F9',
+            line: '#DCE1E9',
+            mute: '#5A6478',
+            rec: '#2563EB',
+            sem: '#7C3AED',
+            tree: '#0D9488',
+            ok: '#16A34A',
+            run: '#D97706',
+            bad: '#DC2626',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    :root { --rec: #2563EB; --sem: #7C3AED; --tree: #0D9488; --ok: #16A34A; --run: #D97706; --bad: #DC2626; --line: #DCE1E9; }
+    html { scroll-padding-top: 1rem; }
+    body { -webkit-font-smoothing: antialiased; }
+    :focus-visible { outline: 2px solid #15203B; outline-offset: 2px; border-radius: 6px; }
+
+    /* ---------- Pipeline rail: the connector line fills as stages finish ---------- */
+    .rail-item { position: relative; display: flex; gap: 12px; padding-bottom: 14px; }
+    .rail-item:last-child { padding-bottom: 0; }
+    .rail-item::before { content: ""; position: absolute; left: 11px; top: 26px; bottom: -2px; width: 2px; background: var(--line); }
+    .rail-item:last-child::before { display: none; }
+    .rail-item[data-status="done"]::before { background: var(--ok); }
+    .rail-item[data-status="failed"]::before { background: var(--bad); }
+    .node { width: 24px; height: 24px; border-radius: 999px; flex: none; display: grid; place-items: center; border: 2px solid var(--line); background: #fff; color: #fff; }
+    .rail-item[data-status="running"] .node { border-color: var(--run); }
+    .rail-item[data-status="done"] .node { border-color: var(--ok); background: var(--ok); }
+    .rail-item[data-status="failed"] .node { border-color: var(--bad); background: var(--bad); }
+    .spinner { width: 12px; height: 12px; border-radius: 999px; border: 2px solid var(--run); border-right-color: transparent; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- Chunk cards ---------- */
+    .chunk-text { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+    .clamp { max-height: 9.25rem; overflow: hidden; position: relative; }
+    .clamp::after { content: ""; position: absolute; inset: auto 0 0 0; height: 2.5rem; background: linear-gradient(to bottom, rgba(255,255,255,0), #fff); pointer-events: none; }
+    .open .clamp { max-height: none; }
+    .open .clamp::after { display: none; }
+    .flash { animation: flash 1.6s ease-out; }
+    @keyframes flash { 0% { box-shadow: 0 0 0 3px rgba(21,32,59,0.35); } 100% { box-shadow: 0 0 0 3px rgba(21,32,59,0); } }
+
+    /* ---------- Size strips ---------- */
+    .strip { display: flex; gap: 2px; height: 26px; }
+    .strip button { min-width: 3px; border-radius: 3px; opacity: 0.85; border: 0; padding: 0; cursor: pointer; }
+    .strip button:hover { opacity: 1; }
+
+    /* ---------- Parent-child tree ---------- */
+    .tree { position: relative; margin-left: 16px; padding-left: 26px; border-left: 2px solid #99D5CF; }
+    .tree-child { position: relative; padding-bottom: 12px; }
+    .tree-child:last-child { padding-bottom: 0; }
+    .tree-child::before { content: ""; position: absolute; left: -26px; top: 22px; width: 24px; height: 2px; background: #99D5CF; }
+    .tree-child::after { content: ""; position: absolute; left: -31px; top: 17px; width: 10px; height: 10px; border-radius: 999px; background: var(--tree); }
+
+    /* ---------- Rendered Markdown ---------- */
+    .doc { font-family: "Source Serif 4", Georgia, serif; font-size: 17px; line-height: 1.7; max-width: 68ch; }
+    .doc h1, .doc h2, .doc h3, .doc h4 { font-family: "Schibsted Grotesk", sans-serif; font-weight: 700; line-height: 1.25; margin: 1.6em 0 0.5em; }
+    .doc h1 { font-size: 1.9rem; margin-top: 0; }
+    .doc h2 { font-size: 1.4rem; }
+    .doc h3 { font-size: 1.15rem; }
+    .doc h4 { font-size: 1rem; }
+    .doc p { margin: 0 0 1em; }
+    .doc ul, .doc ol { margin: 0 0 1em; padding-left: 1.4em; }
+    .doc ul { list-style: disc; }
+    .doc ol { list-style: decimal; }
+    .doc code { font-family: "JetBrains Mono", monospace; font-size: 0.85em; background: #EEF1F6; padding: 1px 5px; border-radius: 4px; }
+    .doc pre { background: #EEF1F6; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 0 0 1em; }
+
+    .skeleton { background: linear-gradient(90deg, #EEF1F6 25%, #E4E8EF 37%, #EEF1F6 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: 6px; }
+    @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+    .tabs { scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner, .skeleton, .flash { animation: none; }
+    }
+  </style>
+</head>
+
+<body class="bg-paper font-sans text-ink">
+  <header class="border-b border-line bg-white">
+    <div class="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">Knowledge Ingestion</h1>
+        <p class="text-sm text-mute">Turn a PDF into clean Markdown, chunks and a parent-child tree.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="status-pill" class="rounded-full border border-line px-3 py-1 text-sm font-medium text-mute">Idle</span>
+        <button data-action="reset" class="hidden rounded-lg border border-line px-3 py-1.5 text-sm font-medium hover:bg-paper" id="reset-btn">Start over</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-[1400px] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+    <!-- Left rail: upload and the processing timeline -->
+    <aside class="space-y-4 self-start lg:sticky lg:top-6">
+      <section class="rounded-xl border border-line bg-white p-4">
+        <h2 class="mb-3 text-sm font-semibold">PDF document</h2>
+        <label
+          id="dropzone"
+          tabindex="0"
+          class="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-line px-4 py-8 text-center transition-colors hover:border-ink/40 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="text-mute" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <span class="text-sm font-medium">Drop a PDF here or click to choose</span>
+          <span class="text-xs text-mute" id="size-hint">Text-based PDFs, up to 10 MB</span>
+          <input id="file-input" type="file" accept="application/pdf,.pdf" class="sr-only" />
+        </label>
+        <div id="file-info" class="mt-3 hidden items-center justify-between gap-3 rounded-lg bg-paper px-3 py-2 text-sm"></div>
+        <button data-action="try-sample" id="sample-btn" class="mt-3 w-full rounded-lg border border-line px-3 py-2 text-sm font-medium hover:bg-paper disabled:opacity-50">
+          Try the sample PDF
+        </button>
+      </section>
+
+      <section class="rounded-xl border border-line bg-white p-4" aria-labelledby="timeline-title">
+        <div class="mb-3 flex items-baseline justify-between gap-3">
+          <h2 id="timeline-title" class="text-sm font-semibold">Processing timeline</h2>
+          <span id="total-time" class="text-xs text-mute"></span>
+        </div>
+        <p id="status-banner" aria-live="polite" class="mb-4 rounded-lg bg-paper px-3 py-2 text-sm text-mute">Waiting for a PDF.</p>
+        <ol id="timeline"></ol>
+      </section>
+    </aside>
+
+    <!-- Right: results workspace -->
+    <section class="min-w-0" aria-label="Results">
+      <div id="empty-state" class="rounded-xl border border-dashed border-line bg-white px-6 py-14">
+        <h2 class="text-lg font-semibold">Nothing processed yet</h2>
+        <p class="mt-2 max-w-[60ch] text-mute">
+          Upload a PDF and each stage appears on the left as it runs. Results fill in on this side while the pipeline works:
+          Markdown, metadata, two kinds of chunks, the parent-child tree and a Gemini summary.
+        </p>
+      </div>
+
+      <div id="results" class="hidden">
+        <nav id="tabs" role="tablist" aria-label="Result views" class="tabs mb-4 flex gap-1 overflow-x-auto border-b border-line"></nav>
+        <div id="panel" role="tabpanel"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
